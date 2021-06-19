@@ -133,6 +133,13 @@ static void handleMessage(const char* topic1, const char* topic2, const char* to
             for(; pos < 16; pos++) {
                 i2c_lcd1602_write_char(lcd_info, 0x20);
             }
+            // Gobble up any remainder on this line
+            while(dataPos < strlen(data)) {
+                dataPos++;
+                if(data[dataPos-1] == ',') {
+                    break;
+                }
+            }
         }
     }
 }
