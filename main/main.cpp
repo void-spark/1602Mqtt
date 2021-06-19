@@ -75,47 +75,64 @@ static void subscribeTopics() {
     subscribeDevTopic("display/write");
 }
 
+static uint8_t hexDigitValue(uint8_t input) {
+    if(input >= '0' && input <= '9') {
+        return input - '0';
+    }
+
+    if(input >= 'a' && input <= 'f') {
+        return 10 + (input- 'a');
+    }
+
+    if(input >= 'A' && input <= 'Z') {
+        return 10 + (input - 'A');
+    }
+
+    return 0;
+}
+
 static void handleMessage(const char* topic1, const char* topic2, const char* topic3, const char* data) {
     if(
         strcmp(topic1, "display") == 0 && 
         strcmp(topic2, "write") == 0 && 
         topic3 == NULL
     ) {
-        i2c_lcd1602_clear(lcd_info);
-        for(size_t pos = 0; pos < strlen(data) ;) {
-            uint8_t valLeft = 0;
+        size_t dataPos = 0;
 
-            if(data[pos] == ' ') {
-                pos += 1;
-                continue;
+        for(int row = 0 ; row < 2 ; row++) {
+            i2c_lcd1602_move_cursor(lcd_info, 0, row);
+            uint32_t pos = 0;
+            for(; pos < 16; pos++) {
+                // Skip spaces
+                while(dataPos < strlen(data) && data[dataPos] == ' ') {
+                    dataPos++;
+                }
+
+                // Next line
+                if(dataPos < strlen(data) && data[dataPos] == ',') {
+                    dataPos++;
+                    break;
+                }
+
+                if(dataPos == strlen(data)) {
+                    break;
+                }
+                // Read first digit.
+                uint8_t valLeft = hexDigitValue(data[dataPos]);
+                dataPos++;
+
+                if(dataPos == strlen(data)) {
+                    break;
+                }
+                // Read second digit.
+                uint8_t valRight = hexDigitValue(data[dataPos]);
+                dataPos++;
+
+                i2c_lcd1602_write_char(lcd_info, valLeft * 0x10 + valRight);
             }
-
-            if(data[pos] == ',') {
-                i2c_lcd1602_move_cursor(lcd_info, 0, 1);
-                pos += 1;
-                continue;
+            for(; pos < 16; pos++) {
+                i2c_lcd1602_write_char(lcd_info, 0x20);
             }
-
-            if(data[pos] >= '0' && data[pos] <= '9') {
-                valLeft = (data[pos] - '0');
-            } else if(data[pos] >= 'a' && data[pos] <= 'f') {
-                valLeft = 10 + (data[pos] - 'a');
-            } else if(data[pos] >= 'A' && data[pos] <= 'Z') {
-                valLeft = 10 + (data[pos] - 'A');
-            }
-
-            uint8_t valRight = 0;
-            if(data[pos+1] >= '0' && data[pos+1] <= '9') {
-                valRight = (data[pos+1] - '0');
-            } else if(data[pos+1] >= 'a' && data[pos+1] <= 'f') {
-                valRight = 10 + (data[pos+1] - 'a');
-            } else if(data[pos+1] >= 'A' && data[pos+1] <= 'Z') {
-                valRight = 10 + (data[pos+1] - 'A');
-            }
-             
-            i2c_lcd1602_write_char(lcd_info, valLeft * 0x10 + valRight);
-
-            pos += 2;
         }
     }
 }
