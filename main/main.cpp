@@ -110,7 +110,7 @@ static void handleMessage(const char* topic1, const char* topic2, const char* to
 
                 // Next line
                 if(dataPos < strlen(data) && data[dataPos] == ',') {
-                    dataPos++;
+                    // Don't move, since we'll want to re-read the comma when gobbling up leftovers.
                     break;
                 }
 
