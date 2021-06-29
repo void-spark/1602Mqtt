@@ -15,6 +15,7 @@
 #include "mqtt_helper.h"
 #include "smbus.h"
 #include "i2c-lcd1602.h"
+#include "max7219.h"
 
 static const char *TAG = "app";
 
@@ -28,10 +29,79 @@ static const char *TAG = "app";
 #define I2C_MASTER_TX_BUF_LEN    0                     // disabled
 #define I2C_MASTER_RX_BUF_LEN    0                     // disabled
 #define I2C_MASTER_FREQ_HZ       100000
-#define I2C_MASTER_SDA_IO        18
-#define I2C_MASTER_SCL_IO        19
+#define I2C_MASTER_SDA_IO        GPIO_NUM_21
+#define I2C_MASTER_SCL_IO        GPIO_NUM_22
 
 static i2c_lcd1602_info_t * lcd_info;
+
+// MAX7219
+#define SCROLL_DELAY 50
+#define CASCADE_SIZE 4
+
+#define HOST VSPI_HOST
+
+#define PIN_NUM_MOSI GPIO_NUM_23
+#define PIN_NUM_CLK  GPIO_NUM_18
+#define PIN_NUM_CS   GPIO_NUM_5
+
+static const uint64_t symbols[] = {
+    0x383838fe7c381000, // arrows
+    0x10387cfe38383800,
+    0x10307efe7e301000,
+    0x1018fcfefc181000,
+    0x10387cfefeee4400, // heart
+    0x105438ee38541000, // sun
+
+    0x7e1818181c181800, // digits
+    0x7e060c3060663c00,
+    0x3c66603860663c00,
+    0x30307e3234383000,
+    0x3c6660603e067e00,
+    0x3c66663e06663c00,
+    0x1818183030667e00,
+    0x3c66663c66663c00,
+    0x3c66607c66663c00,
+    0x3c66666e76663c00,
+    0x383838fe7c381000  // Repeat first
+};
+const static size_t symbols_size = sizeof(symbols) - sizeof(uint64_t);
+
+void max_7219_task(void *pvParameter) {
+    // Configure SPI bus
+    spi_bus_config_t cfg = {
+       .mosi_io_num = PIN_NUM_MOSI,
+       .miso_io_num = -1,
+       .sclk_io_num = PIN_NUM_CLK,
+       .quadwp_io_num = -1,
+       .quadhd_io_num = -1,
+       .max_transfer_sz = 0,
+       .flags = 0
+    };
+    ESP_ERROR_CHECK(spi_bus_initialize(HOST, &cfg, 1));
+
+    // Configure device
+    max7219_t dev = {
+       .digits = 0,
+       .cascade_size = CASCADE_SIZE,
+       .mirrored = true
+    };
+    ESP_ERROR_CHECK(max7219_init_desc(&dev, HOST, PIN_NUM_CS));
+    ESP_ERROR_CHECK(max7219_init(&dev));
+    size_t offs = 0;
+    while (1) {
+        for (uint8_t c = 0; c < CASCADE_SIZE; c ++) {
+            max7219_draw_image_8x8(&dev, c, (uint8_t *)symbols + (c * 8 + offs) % symbols_size);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(SCROLL_DELAY));
+
+        if (++offs == symbols_size)
+            offs = 0;
+    }
+
+    vTaskDelete(NULL);
+}
+
 
 static esp_err_t i2c_master_init() {
     int i2c_master_port = I2C_MASTER_NUM;
@@ -157,6 +227,9 @@ extern "C" void app_main() {
     ESP_ERROR_CHECK(i2c_master_init());
 
     lcd1602_setup();
+
+    xTaskCreatePinnedToCore(max_7219_task, "max_7219_task", configMINIMAL_STACK_SIZE * 3, NULL, 5, NULL, APP_CPU_NUM);
+
 
     i2c_lcd1602_clear(lcd_info);
     i2c_lcd1602_write_string(lcd_info, "Init WiFi...");
