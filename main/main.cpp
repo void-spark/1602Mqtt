@@ -9,6 +9,7 @@
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
+#include "esp_https_ota.h"
 #include "nvs_flash.h"
 #include "lwip/apps/sntp.h"
 #include "wifi_helper.h"
@@ -65,6 +66,25 @@ static const uint64_t symbols[] = {
     0x383838fe7c381000  // Repeat first
 };
 const static size_t symbols_size = sizeof(symbols) - sizeof(uint64_t);
+
+static const char* ota_url = "http://raspberrypi.fritz.box:8032/esp32/1602.bin";
+
+static void ota_task(void * pvParameter) {
+    ESP_LOGI(TAG, "Starting OTA update...");
+
+    esp_http_client_config_t config = {
+        .url = ota_url,
+    };
+    esp_err_t ret = esp_https_ota(&config);
+    if (ret == ESP_OK) {
+        esp_restart();
+    } else {
+        ESP_LOGE(TAG, "Firmware Upgrades Failed");
+    }
+    while (1) {
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }
+}
 
 void max_7219_task(void *pvParameter) {
     // Configure SPI bus
@@ -143,6 +163,7 @@ static void lcd1602_setup() {
 
 static void subscribeTopics() {
     subscribeDevTopic("display/write");
+    subscribeDevTopic("$update");
 }
 
 static uint8_t hexDigitValue(uint8_t input) {
@@ -162,6 +183,15 @@ static uint8_t hexDigitValue(uint8_t input) {
 }
 
 static void handleMessage(const char* topic1, const char* topic2, const char* topic3, const char* data) {
+
+    if(
+        strcmp(topic1, "$update") == 0 && 
+        topic2 == NULL && 
+        topic3 == NULL
+    ) {
+        xTaskCreate(&ota_task, "ota_task", 8192, NULL, 5, NULL);
+    }
+
     if(
         strcmp(topic1, "display") == 0 && 
         strcmp(topic2, "write") == 0 && 
