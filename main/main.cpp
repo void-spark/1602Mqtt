@@ -65,7 +65,7 @@ static const uint64_t symbols[] = {
     0x3c66666e76663c00,
     0x383838fe7c381000  // Repeat first
 };
-const static size_t symbols_size = sizeof(symbols) - sizeof(uint64_t);
+const static size_t symbols_size = sizeof(symbols) - sizeof(symbols[0]);
 
 static const char* ota_url = "http://raspberrypi.fritz.box:8032/esp32/1602.bin";
 
@@ -101,22 +101,51 @@ void max_7219_task(void *pvParameter) {
 
     // Configure device
     max7219_t dev = {
-       .digits = 0,
        .cascade_size = CASCADE_SIZE,
        .mirrored = true
     };
     ESP_ERROR_CHECK(max7219_init_desc(&dev, HOST, PIN_NUM_CS));
     ESP_ERROR_CHECK(max7219_init(&dev));
-    size_t offs = 0;
+    // Next brightness is quite a lot more already, and a bit heavy on the regulator.
+    ESP_ERROR_CHECK(max7219_set_brightness(&dev, 0));
+
+    const size_t devices = CASCADE_SIZE;
+    const size_t lines = 8;
+    const size_t rows = 8;
+    uint32_t right = 1;
+
+    uint8_t buffer[devices * lines] = {0};
+    // memcpy(buffer + 0 * lines, symbols + 0, lines);
+    // memcpy(buffer + 1 * lines, symbols + 1, lines);
+    // memcpy(buffer + 2 * lines, symbols + 4, lines);
+    // memcpy(buffer + 3 * lines, symbols + 5, lines);
+
+    // Note: bits are inverse on the display, so left shift = right shift.
+    // But devices are in correct order.
     while (1) {
-        for (uint8_t c = 0; c < CASCADE_SIZE; c ++) {
-            max7219_draw_image_8x8(&dev, c, (uint8_t *)symbols + (c * 8 + offs) % symbols_size);
+        for(int cnt = 0 ; cnt < 4; cnt++) {
+            uint32_t selectedIndex = esp_random() % (symbols_size / sizeof(symbols[0]));
+            uint8_t * selected = (uint8_t *) &(symbols[selectedIndex]);
+
+            for(int horizontal = 0; horizontal < rows; horizontal++) {
+                max7219_draw_images_8x8(&dev, devices, buffer);
+
+                for(size_t line = 0; line < lines; line++) {
+                    uint8_t input = (!right ? selected[line] >> horizontal : selected[line] >> (rows - (horizontal + 1))) & 0x01;
+                    uint8_t nextCarry = input;
+                    // uint8_t nextCarry = !right ? (buffer[line] & 0x01) : ((buffer[(devices - 1) * lines + line] & 0x80) >> 7);
+
+                    for (size_t device = 0; device < devices; device++) {
+                        size_t index = (right ? device : devices - (device + 1)) * lines + line;
+                        uint8_t carry = !right ? (buffer[index] & 0x01) : ((buffer[index] & 0x80) >> 7);
+                        buffer[index] = !right ? (buffer[index] >> 1) | nextCarry << 7 : (buffer[index] << 1) | nextCarry;
+                        nextCarry = carry;
+                    }
+                }
+                vTaskDelay(pdMS_TO_TICKS(SCROLL_DELAY));
+            }
         }
-
-        vTaskDelay(pdMS_TO_TICKS(SCROLL_DELAY));
-
-        if (++offs == symbols_size)
-            offs = 0;
+        right = !right;
     }
 
     vTaskDelete(NULL);
