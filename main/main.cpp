@@ -69,6 +69,8 @@ const static size_t symbols_size = sizeof(symbols) - sizeof(symbols[0]);
 
 static const char* ota_url = "http://raspberrypi.fritz.box:8032/esp32/1602.bin";
 
+static volatile uint8_t brightness = 0;
+
 static void ota_task(void * pvParameter) {
     ESP_LOGI(TAG, "Starting OTA update...");
 
@@ -106,8 +108,7 @@ void max_7219_task(void *pvParameter) {
     };
     ESP_ERROR_CHECK(max7219_init_desc(&dev, HOST, PIN_NUM_CS));
     ESP_ERROR_CHECK(max7219_init(&dev));
-    // Next brightness is quite a lot more already, and a bit heavy on the regulator.
-    ESP_ERROR_CHECK(max7219_set_brightness(&dev, 0));
+    ESP_ERROR_CHECK(max7219_set_brightness(&dev, brightness));
 
     const size_t devices = CASCADE_SIZE;
     const size_t lines = 8;
@@ -126,6 +127,8 @@ void max_7219_task(void *pvParameter) {
         for(int cnt = 0 ; cnt < 4; cnt++) {
             uint32_t selectedIndex = esp_random() % (symbols_size / sizeof(symbols[0]));
             uint8_t * selected = (uint8_t *) &(symbols[selectedIndex]);
+
+            ESP_ERROR_CHECK(max7219_set_brightness(&dev, brightness));
 
             for(int horizontal = 0; horizontal < rows; horizontal++) {
                 max7219_draw_images_8x8(&dev, devices, buffer);
@@ -192,6 +195,7 @@ static void lcd1602_setup() {
 
 static void subscribeTopics() {
     subscribeDevTopic("display/write");
+    subscribeDevTopic("leds/brightness");
     subscribeDevTopic("$update");
 }
 
@@ -219,6 +223,14 @@ static void handleMessage(const char* topic1, const char* topic2, const char* to
         topic3 == NULL
     ) {
         xTaskCreate(&ota_task, "ota_task", 8192, NULL, 5, NULL);
+    }
+
+    if(
+        strcmp(topic1, "leds") == 0 && 
+        strcmp(topic2, "brightness") == 0 && 
+        topic3 == NULL
+    ) {
+        brightness = (uint8_t)strtol(data, NULL, 10);
     }
 
     if(
