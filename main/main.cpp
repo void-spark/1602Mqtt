@@ -16,7 +16,8 @@
 #include "mqtt_helper.h"
 #include "smbus.h"
 #include "i2c-lcd1602.h"
-#include "max7219.h"
+#include "u8g2_esp32_hal.h"
+#include "u8g2.h"
 
 static const char *TAG = "app";
 
@@ -45,27 +46,7 @@ static i2c_lcd1602_info_t * lcd_info;
 #define PIN_NUM_CLK  GPIO_NUM_18
 #define PIN_NUM_CS   GPIO_NUM_5
 
-static const uint64_t symbols[] = {
-    0x383838fe7c381000, // arrows
-    0x10387cfe38383800,
-    0x10307efe7e301000,
-    0x1018fcfefc181000,
-    0x10387cfefeee4400, // heart
-    0x105438ee38541000, // sun
-
-    0x7e1818181c181800, // digits
-    0x7e060c3060663c00,
-    0x3c66603860663c00,
-    0x30307e3234383000,
-    0x3c6660603e067e00,
-    0x3c66663e06663c00,
-    0x1818183030667e00,
-    0x3c66663c66663c00,
-    0x3c66607c66663c00,
-    0x3c66666e76663c00,
-    0x383838fe7c381000  // Repeat first
-};
-const static size_t symbols_size = sizeof(symbols) - sizeof(symbols[0]);
+static u8g2_t u8g2; // a structure which will contain all the data for one display
 
 static const char* ota_url = "http://raspberrypi.fritz.box:8032/esp32/1602.bin";
 
@@ -88,67 +69,59 @@ static void ota_task(void * pvParameter) {
     }
 }
 
+#define BUF_LEN 12
+void draw_string_at_bitpos(const char *str, uint16_t bitpos) {
+  char buf[BUF_LEN];
+  uint16_t start = bitpos / 8;
+  uint16_t i;
+  for( i = 0; i < BUF_LEN-1; i++) {
+    buf[i] = str[start+i];
+    if ( str[start+i] == '\0' ) {
+      break;
+    }
+  }
+  buf[BUF_LEN-1] = '\0';
+  u8g2_DrawStr(&u8g2, -(bitpos & 7), 7, buf);
+}
+
 void max_7219_task(void *pvParameter) {
-    // Configure SPI bus
-    spi_bus_config_t cfg = {
-       .mosi_io_num = PIN_NUM_MOSI,
-       .miso_io_num = -1,
-       .sclk_io_num = PIN_NUM_CLK,
-       .quadwp_io_num = -1,
-       .quadhd_io_num = -1,
-       .max_transfer_sz = 0,
-       .flags = 0
-    };
-    ESP_ERROR_CHECK(spi_bus_initialize(HOST, &cfg, 1));
 
-    // Configure device
-    max7219_t dev = {
-       .cascade_size = CASCADE_SIZE,
-       .mirrored = true
-    };
-    ESP_ERROR_CHECK(max7219_init_desc(&dev, HOST, PIN_NUM_CS));
-    ESP_ERROR_CHECK(max7219_init(&dev));
-    ESP_ERROR_CHECK(max7219_set_brightness(&dev, brightness));
+	u8g2_esp32_hal_t u8g2_esp32_hal = U8G2_ESP32_HAL_DEFAULT;
+    u8g2_esp32_hal.host = HOST;
+    u8g2_esp32_hal.clock_speed_hz = SPI_MASTER_FREQ_10M;
+	u8g2_esp32_hal.clk   = PIN_NUM_CLK;
+	u8g2_esp32_hal.mosi  = PIN_NUM_MOSI;
+	u8g2_esp32_hal.cs    = PIN_NUM_CS;
+	u8g2_esp32_hal_init(u8g2_esp32_hal);
 
-    const size_t devices = CASCADE_SIZE;
-    const size_t lines = 8;
-    const size_t rows = 8;
-    uint32_t right = 1;
+	u8g2_Setup_max7219_32x8_f(
+		&u8g2,
+		U8G2_R2,
+		u8g2_esp32_spi_byte_cb,
+		u8g2_esp32_gpio_and_delay_cb);  // init u8g2 structure
 
-    uint8_t buffer[devices * lines] = {0};
-    // memcpy(buffer + 0 * lines, symbols + 0, lines);
-    // memcpy(buffer + 1 * lines, symbols + 1, lines);
-    // memcpy(buffer + 2 * lines, symbols + 4, lines);
-    // memcpy(buffer + 3 * lines, symbols + 5, lines);
+	u8g2_InitDisplay(&u8g2);
+	u8g2_SetContrast(&u8g2, 0); // Sets the brightness, start low
+    u8g2_ClearDisplay(&u8g2);
+    u8g2_SetPowerSave(&u8g2, 0); // Init display leaves the display off
 
-    // Note: bits are inverse on the display, so left shift = right shift.
-    // But devices are in correct order.
+
+    u8g2_SetFont(&u8g2, u8g2_font_victoriabold8_8r);
+
+    uint16_t pos = 0;
+    char *str = "    Hello from U8g2... Arduino monochrome graphics library    ";
+    uint16_t len = strlen(str)*8;
+
     while (1) {
-        for(int cnt = 0 ; cnt < 4; cnt++) {
-            uint32_t selectedIndex = esp_random() % (symbols_size / sizeof(symbols[0]));
-            uint8_t * selected = (uint8_t *) &(symbols[selectedIndex]);
-
-            ESP_ERROR_CHECK(max7219_set_brightness(&dev, brightness));
-
-            for(int horizontal = 0; horizontal < rows; horizontal++) {
-                max7219_draw_images_8x8(&dev, devices, buffer);
-
-                for(size_t line = 0; line < lines; line++) {
-                    uint8_t input = (!right ? selected[line] >> horizontal : selected[line] >> (rows - (horizontal + 1))) & 0x01;
-                    uint8_t nextCarry = input;
-                    // uint8_t nextCarry = !right ? (buffer[line] & 0x01) : ((buffer[(devices - 1) * lines + line] & 0x80) >> 7);
-
-                    for (size_t device = 0; device < devices; device++) {
-                        size_t index = (right ? device : devices - (device + 1)) * lines + line;
-                        uint8_t carry = !right ? (buffer[index] & 0x01) : ((buffer[index] & 0x80) >> 7);
-                        buffer[index] = !right ? (buffer[index] >> 1) | nextCarry << 7 : (buffer[index] << 1) | nextCarry;
-                        nextCarry = carry;
-                    }
-                }
-                vTaskDelay(pdMS_TO_TICKS(SCROLL_DELAY));
-            }
+        u8g2_SetContrast(&u8g2, brightness << 4);
+        u8g2_ClearBuffer(&u8g2);					// clear the internal memory
+        draw_string_at_bitpos(str, pos);
+        u8g2_SendBuffer(&u8g2);					// transfer internal memory to the display
+        pos++;
+        if ( pos >= len ) {
+            pos = 0;
         }
-        right = !right;
+        vTaskDelay(pdMS_TO_TICKS(SCROLL_DELAY));
     }
 
     vTaskDelete(NULL);
