@@ -69,6 +69,164 @@ static void ota_task(void * pvParameter) {
     }
 }
 
+static void scrollLeft(const char *str) {
+
+    // https://raw.githubusercontent.com/wiki/olikraus/u8g2/fntpic/u8g2_font_nokiafc22_tf.png
+    u8g2_SetFont(&u8g2, u8g2_font_nokiafc22_tf);
+
+   const size_t bufLen = 12; // Should be enough even with chars only 3 pixels wide (2 visible, 1 spacer).
+    char buf[bufLen];
+
+    const size_t displayWidth = 32; // Pixels
+    size_t charPos = 0;
+    size_t innerPos = -displayWidth; // Start at right side of display
+    const size_t charHeight = u8g2_GetMaxCharHeight(&u8g2);
+    size_t charWidth = u8g2_GetGlyphWidth(&u8g2, str[charPos]);
+
+    while (1) {
+        u8g2_SetContrast(&u8g2, brightness << 4);
+        u8g2_ClearBuffer(&u8g2);					// clear the internal memory
+
+        if(innerPos == charWidth) {
+            charPos++;
+            if(charPos == strlen(str)) {
+                break;
+                // charPos = 0;
+                // innerPos = -displayWidth;
+            } else {
+                innerPos = 0;
+            }
+
+            charWidth = u8g2_GetGlyphWidth(&u8g2, str[charPos]);
+        }
+        for(uint16_t i = 0; i < bufLen-1; i++) {
+            buf[i] = str[charPos+i];
+            if ( str[charPos+i] == '\0' ) {
+                break;
+            }
+        }
+        buf[bufLen-1] = '\0';
+        u8g2_DrawStr(&u8g2, -innerPos, charHeight - 1, buf);
+        innerPos++;
+
+        u8g2_SendBuffer(&u8g2);					// transfer internal memory to the display
+
+        vTaskDelay(pdMS_TO_TICKS(SCROLL_DELAY));
+    }    
+}
+
+static void scrollUp() {
+    // https://raw.githubusercontent.com/wiki/olikraus/u8g2/fntpic/u8g2_font_victoriabold8_8r.png
+    // u8g2_SetFont(&u8g2, u8g2_font_victoriabold8_8r);
+    // https://raw.githubusercontent.com/wiki/olikraus/u8g2/fntpic/u8g2_font_pxplusibmcga_8f.png
+    u8g2_SetFont(&u8g2, u8g2_font_pxplusibmcga_8f);
+
+    const char *str = "1234";
+
+    int step = 0;
+    while (1) {
+        u8g2_SetContrast(&u8g2, brightness << 4);
+        u8g2_ClearBuffer(&u8g2);					// clear the internal memory
+
+        if(step == 4*8) {
+            break;
+        }
+
+        if(step < 8) {
+            u8g2_DrawStr(&u8g2, 0, 16 - step, str);
+        } else if(step > 24) {
+            u8g2_DrawStr(&u8g2, 0, 8 - (step - 24), str);
+        } else {
+            u8g2_DrawStr(&u8g2, 0, 8, str);
+        }
+
+        step++;
+
+        u8g2_SendBuffer(&u8g2);					// transfer internal memory to the display
+
+        vTaskDelay(pdMS_TO_TICKS(SCROLL_DELAY));
+    }    
+}
+
+static void clock1() {
+
+    // https://raw.githubusercontent.com/wiki/olikraus/u8g2/fntpic/u8g2_font_nokiafc22_tf.png
+    u8g2_SetFont(&u8g2, u8g2_font_nokiafc22_tf);
+
+    const size_t charHeight = u8g2_GetMaxCharHeight(&u8g2);
+
+    time_t now;
+    struct tm timeinfo;
+
+    int  cnt = 0;
+    while (1) {
+        u8g2_SetContrast(&u8g2, brightness << 4);
+        u8g2_ClearBuffer(&u8g2);					// clear the internal memory
+
+
+        if(cnt == 100) {
+            break;
+        }
+	    time(&now);
+		localtime_r(&now, &timeinfo);
+		if(timeinfo.tm_year >= (2016 - 1900)) {
+			char strftime_buf[16];
+            size_t result = strftime(strftime_buf, sizeof(strftime_buf), (timeinfo.tm_sec % 2) ? "%H %M" : "%H:%M", &timeinfo);
+            int left = 0;
+            for(int pos = 0; pos < result; pos++) {
+                u8g2_DrawGlyph(&u8g2, left, charHeight - 1, strftime_buf[pos]);
+                left += u8g2_GetGlyphWidth(&u8g2, strftime_buf[pos]);
+            }
+		}
+        cnt++;
+
+        u8g2_SendBuffer(&u8g2);					// transfer internal memory to the display
+
+        vTaskDelay(pdMS_TO_TICKS(SCROLL_DELAY));
+    }    
+}
+
+static void fruit() {
+    // https://raw.githubusercontent.com/wiki/olikraus/u8g2/fntpic/u8g2_font_victoriabold8_8r.png
+    // u8g2_SetFont(&u8g2, u8g2_font_victoriabold8_8r);
+    // https://raw.githubusercontent.com/wiki/olikraus/u8g2/fntpic/u8g2_font_pxplusibmcga_8f.png
+    u8g2_SetFont(&u8g2, u8g2_font_pxplusibmcga_8f);
+
+    int digitHeight = u8g2_GetMaxCharHeight(&u8g2);
+    int distancePerPixel = 5000; // To 'smooth' the movement, we use sub pixel distances.
+    int digitHeightSubPixel = digitHeight * distancePerPixel;
+    int digits = 10;
+
+    int speed = distancePerPixel / 2;
+    int pos = 0;
+
+
+    while (1) {
+        u8g2_SetContrast(&u8g2, brightness << 4);
+        u8g2_ClearBuffer(&u8g2);					// clear the internal memory
+
+
+        if(speed == 0) {
+            break;
+        }
+
+        int indexLow = (pos / digitHeightSubPixel);
+        int digitLowPos = (pos % digitHeightSubPixel) / distancePerPixel;
+        u8g2_DrawGlyph(&u8g2, 0, digitHeight + digitLowPos,'0' + indexLow);
+        u8g2_DrawGlyph(&u8g2, 0, digitLowPos,'0' + (indexLow + 1) % 10 );
+
+
+        pos += speed;
+        pos %= digits * digitHeightSubPixel;
+        int resistance = speed / 250;
+        speed -= resistance ==  0 ? 1 : resistance;
+
+        u8g2_SendBuffer(&u8g2);					// transfer internal memory to the display
+
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }    
+}
+
 void max_7219_task(void *pvParameter) {
 
 	u8g2_esp32_hal_t u8g2_esp32_hal = U8G2_ESP32_HAL_DEFAULT;
@@ -90,52 +248,13 @@ void max_7219_task(void *pvParameter) {
     u8g2_ClearDisplay(&u8g2);
     u8g2_SetPowerSave(&u8g2, 0); // Init display leaves the display off
 
-    // https://raw.githubusercontent.com/wiki/olikraus/u8g2/fntpic/u8g2_font_victoriabold8_8r.png
-    // u8g2_SetFont(&u8g2, u8g2_font_victoriabold8_8r);
-    // https://raw.githubusercontent.com/wiki/olikraus/u8g2/fntpic/u8g2_font_pxplusibmcga_8f.png
-    // u8g2_SetFont(&u8g2, u8g2_font_pxplusibmcga_8f);
-    // https://raw.githubusercontent.com/wiki/olikraus/u8g2/fntpic/u8g2_font_nokiafc22_tf.png
-    u8g2_SetFont(&u8g2, u8g2_font_nokiafc22_tf);
-
-
-    const char *str = "    Hello from U8g2... Arduino monochrome graphics library    ";
-
-    const size_t charHeight = u8g2_GetMaxCharHeight(&u8g2);
-    const size_t bufLen = 12;
-
-    char buf[bufLen];
-
-    size_t charPos = 0;
-    size_t innerPos = 0;
-    size_t charWidth = u8g2_GetGlyphWidth(&u8g2, str[charPos]);
+	setenv("TZ", "CET-1CEST,M3.5.0,M10.5.0/3", 1);
+	tzset();
 
     while (1) {
-        u8g2_SetContrast(&u8g2, brightness << 4);
-        u8g2_ClearBuffer(&u8g2);					// clear the internal memory
-
-
-        if(innerPos == charWidth) {
-            charPos++;
-            if(charPos == strlen(str)) {
-                charPos = 0;
-            }
-
-            innerPos = 0;
-            charWidth = u8g2_GetGlyphWidth(&u8g2, str[charPos]);
-        }
-        for(uint16_t i = 0; i < bufLen-1; i++) {
-            buf[i] = str[charPos+i];
-            if ( str[charPos+i] == '\0' ) {
-                break;
-            }
-        }
-        buf[bufLen-1] = '\0';
-        u8g2_DrawStr(&u8g2, -innerPos, charHeight - 1, buf);
-        innerPos++;
-
-
-        u8g2_SendBuffer(&u8g2);					// transfer internal memory to the display
-        vTaskDelay(pdMS_TO_TICKS(SCROLL_DELAY));
+        clock1();
+        // fruit();
+        scrollLeft("Oh God How Did This Get Here I Am Not Good With Computer");
     }
 
     vTaskDelete(NULL);
