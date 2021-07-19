@@ -69,21 +69,6 @@ static void ota_task(void * pvParameter) {
     }
 }
 
-#define BUF_LEN 12
-void draw_string_at_bitpos(const char *str, uint16_t bitpos) {
-  char buf[BUF_LEN];
-  uint16_t start = bitpos / 8;
-  uint16_t i;
-  for( i = 0; i < BUF_LEN-1; i++) {
-    buf[i] = str[start+i];
-    if ( str[start+i] == '\0' ) {
-      break;
-    }
-  }
-  buf[BUF_LEN-1] = '\0';
-  u8g2_DrawStr(&u8g2, -(bitpos & 7), 7, buf);
-}
-
 void max_7219_task(void *pvParameter) {
 
 	u8g2_esp32_hal_t u8g2_esp32_hal = U8G2_ESP32_HAL_DEFAULT;
@@ -105,22 +90,51 @@ void max_7219_task(void *pvParameter) {
     u8g2_ClearDisplay(&u8g2);
     u8g2_SetPowerSave(&u8g2, 0); // Init display leaves the display off
 
+    // https://raw.githubusercontent.com/wiki/olikraus/u8g2/fntpic/u8g2_font_victoriabold8_8r.png
+    // u8g2_SetFont(&u8g2, u8g2_font_victoriabold8_8r);
+    // https://raw.githubusercontent.com/wiki/olikraus/u8g2/fntpic/u8g2_font_pxplusibmcga_8f.png
+    // u8g2_SetFont(&u8g2, u8g2_font_pxplusibmcga_8f);
+    // https://raw.githubusercontent.com/wiki/olikraus/u8g2/fntpic/u8g2_font_nokiafc22_tf.png
+    u8g2_SetFont(&u8g2, u8g2_font_nokiafc22_tf);
 
-    u8g2_SetFont(&u8g2, u8g2_font_victoriabold8_8r);
 
-    uint16_t pos = 0;
-    char *str = "    Hello from U8g2... Arduino monochrome graphics library    ";
-    uint16_t len = strlen(str)*8;
+    const char *str = "    Hello from U8g2... Arduino monochrome graphics library    ";
+
+    const size_t charHeight = u8g2_GetMaxCharHeight(&u8g2);
+    const size_t bufLen = 12;
+
+    char buf[bufLen];
+
+    size_t charPos = 0;
+    size_t innerPos = 0;
+    size_t charWidth = u8g2_GetGlyphWidth(&u8g2, str[charPos]);
 
     while (1) {
         u8g2_SetContrast(&u8g2, brightness << 4);
         u8g2_ClearBuffer(&u8g2);					// clear the internal memory
-        draw_string_at_bitpos(str, pos);
-        u8g2_SendBuffer(&u8g2);					// transfer internal memory to the display
-        pos++;
-        if ( pos >= len ) {
-            pos = 0;
+
+
+        if(innerPos == charWidth) {
+            charPos++;
+            if(charPos == strlen(str)) {
+                charPos = 0;
+            }
+
+            innerPos = 0;
+            charWidth = u8g2_GetGlyphWidth(&u8g2, str[charPos]);
         }
+        for(uint16_t i = 0; i < bufLen-1; i++) {
+            buf[i] = str[charPos+i];
+            if ( str[charPos+i] == '\0' ) {
+                break;
+            }
+        }
+        buf[bufLen-1] = '\0';
+        u8g2_DrawStr(&u8g2, -innerPos, charHeight - 1, buf);
+        innerPos++;
+
+
+        u8g2_SendBuffer(&u8g2);					// transfer internal memory to the display
         vTaskDelay(pdMS_TO_TICKS(SCROLL_DELAY));
     }
 
