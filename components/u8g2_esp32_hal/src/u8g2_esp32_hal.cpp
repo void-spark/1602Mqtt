@@ -9,6 +9,14 @@
 
 #include "u8g2_esp32_hal.h"
 
+/**
+ * Handle actual spi/i2c implementation for u8g2.
+ * This is very much setup to work with just esp32 and max7219 (just spi).
+ * Since the esp32 api requires you to provide the data of one transaction at once,
+ * but the max7219 u8g2 code gives the data byte for byte, we need to add some buffering.
+ * The only (other) implementation of this I found online is:
+ * https://github.com/nodemcu/nodemcu-firmware/blob/master/app/platform/u8x8_nodemcu_hal.c
+ */
 static spi_device_handle_t handle_spi;      // SPI handle.
 static u8g2_esp32_hal_t    u8g2_esp32_hal;  // HAL state data.
 
