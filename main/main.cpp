@@ -427,7 +427,7 @@ extern "C" void app_main() {
     i2c_lcd1602_clear(lcd_info);
     i2c_lcd1602_write_string(lcd_info, "Init MQTT...");
 
-    mqttStart(subscribeTopics, handleMessage);
+    mqttStart(subscribeTopics, handleMessage, NULL);
     mqttWait();
 
     char text[81] = {};

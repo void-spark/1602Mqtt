@@ -1,5 +1,4 @@
 # My configuration options
-CONFIG_ESPTOOLPY_PORT="rfc2217://host.docker.internal:2217"
 CONFIG_ESPTOOLPY_BAUD_921600B=y
 
 # My chips are 4MB flash, once you use OTA this settings matters
@@ -13,11 +12,10 @@ CONFIG_OTA_ALLOW_HTTP=y
 
 # Keeping the clock low prevents the ams1117 from overheating (I run from higher voltage)
 CONFIG_ESP32_DEFAULT_CPU_FREQ_80=y
-CONFIG_FREERTOS_HZ=100
+CONFIG_FREERTOS_HZ=1000
 
-# Tweak the stack sizes some, some might be old defaults, I think I did idle on purpose.
-CONFIG_FREERTOS_IDLE_TASK_STACKSIZE=1024
-CONFIG_TCPIP_TASK_STACK_SIZE=2048
+# We do MQTT stuff (status reports) on the timer, which tends to hit the stack limit (default 2048).
+CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH=3072
 
 # Disable fancy MQTT things we don't want
 CONFIG_MQTT_TRANSPORT_SSL=
